@@ -1,0 +1,329 @@
+{% extends 'todo/base.html' %}
+{% load todo_extras %}
+
+{% block title %}Calendar{% endblock %}
+
+{% block header_actions %}
+<a href="{% url 'todo-list' %}" class="btn btn-sm btn-outline-primary">📋 List</a>
+<a href="{% url 'todo-create' %}" class="btn btn-sm btn-primary">➕ Add Todo</a>
+{% endblock %}
+
+{% block extra_styles %}
+<style>
+    .calendar-container {
+        background: var(--bg-primary);
+        border-radius: 8px;
+        padding: 1.5rem;
+        box-shadow: 0 2px 8px var(--shadow);
+    }
+
+    .calendar-nav {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 1.5rem;
+        padding-bottom: 1rem;
+        border-bottom: 2px solid var(--border-color);
+    }
+
+    .calendar-table {
+        width: 100%;
+        border-collapse: separate;
+        border-spacing: 0;
+        table-layout: fixed; /* Fix: Enforce equal column widths */
+    }
+
+    .calendar-table th {
+        background: var(--bg-secondary);
+        color: var(--text-primary);
+        padding: 0.75rem;
+        text-align: center;
+        font-weight: 600;
+        border: 1px solid var(--border-color);
+        border-bottom: 2px solid var(--border-color);
+        width: 14.28%; /* Fix: Explicitly set 1/7th width */
+    }
+
+    .calendar-table td {
+        border: 1px solid var(--border-color);
+        height: 140px; /* Fix: Set a strict fixed height */
+        vertical-align: top;
+        padding: 0; /* Fix: Remove padding from cell, move to inner div */
+        background: var(--bg-primary);
+        position: relative;
+    }
+
+    .calendar-table td:hover {
+        background: var(--bg-secondary);
+    }
+
+    /* New Wrapper for Cell Content */
+    .day-content {
+        height: 100%;
+        padding: 0.5rem;
+        overflow-y: auto; /* Fix: Scroll if content overflows */
+        display: flex;
+        flex-direction: column;
+    }
+
+    /* Custom Scrollbar for better aesthetics */
+    .day-content::-webkit-scrollbar {
+        width: 4px;
+    }
+    
+    .day-content::-webkit-scrollbar-thumb {
+        background-color: var(--border-color);
+        border-radius: 4px;
+    }
+
+    .calendar-day-number {
+        font-weight: 600;
+        color: var(--text-primary);
+        margin-bottom: 0.5rem;
+        font-size: 1.1rem;
+        position: sticky; /* Keep day number visible when scrolling */
+        top: 0;
+    }
+
+    .calendar-todo {
+        font-size: 0.75rem;
+        padding: 0.25rem 0.5rem;
+        margin: 0.25rem 0;
+        border-radius: 4px;
+        cursor: pointer;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        transition: all 0.2s ease;
+        border-left: 3px solid;
+        flex-shrink: 0; /* Prevent todos from shrinking */
+    }
+
+    .calendar-todo:hover {
+        transform: translateX(2px);
+        box-shadow: 0 2px 4px var(--shadow);
+    }
+
+    .todo-pending {
+        background: #e3f2fd;
+        border-left-color: #2196f3;
+        color: #1565c0;
+    }
+
+    .todo-completed {
+        background: #e8f5e9;
+        border-left-color: #4caf50;
+        color: #2e7d32;
+        text-decoration: line-through;
+        opacity: 0.7;
+    }
+
+    .todo-overdue {
+        background: #ffebee;
+        border-left-color: #f44336;
+        color: #c62828;
+    }
+
+    [data-theme="dark"] .todo-pending {
+        background: #1a237e;
+        border-left-color: #64b5f6;
+        color: #90caf9;
+    }
+
+    [data-theme="dark"] .todo-completed {
+        background: #1b5e20;
+        border-left-color: #81c784;
+        color: #a5d6a7;
+    }
+
+    [data-theme="dark"] .todo-overdue {
+        background: #b71c1c;
+        border-left-color: #ef5350;
+        color: #ef9a9a;
+    }
+
+    .empty-day {
+        background: var(--bg-tertiary);
+        opacity: 0.5;
+    }
+
+    .legend {
+        display: flex;
+        gap: 1.5rem;
+        margin-top: 1.5rem;
+        padding-top: 1rem;
+        border-top: 1px solid var(--border-color);
+        flex-wrap: wrap;
+    }
+
+    .legend-item {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="calendar-container">
+    <div class="calendar-nav">
+        <a href="?year={{ prev_year }}&month={{ prev_month }}" class="btn btn-outline-primary">
+            ← Previous
+        </a>
+        <h2 class="mb-0">{{ month_name }} {{ year }}</h2>
+        <a href="?year={{ next_year }}&month={{ next_month }}" class="btn btn-outline-primary">
+            Next →
+        </a>
+    </div>
+
+    <table class="calendar-table">
+        <thead>
+            <tr>
+                <th>Monday</th>
+                <th>Tuesday</th>
+                <th>Wednesday</th>
+                <th>Thursday</th>
+                <th>Friday</th>
+                <th>Saturday</th>
+                <th>Sunday</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for week in calendar %}
+            <tr>
+                {% for day in week %}
+                <td {% if day == 0 %}class="empty-day" {% endif %}>
+                    <div class="day-content">
+                        {% if day != 0 %}
+                        <div class="calendar-day-number">{{ day }}</div>
+                        {% for todo in todos_by_date|get_item:day %}
+                        <div class="calendar-todo {% if todo.is_resolved %}todo-completed{% else %}{% now 'U' as current_timestamp %}{% if todo.due_date|date:'U' < current_timestamp %}todo-overdue{% else %}todo-pending{% endif %}{% endif %}"
+                            title="{{ todo.title }}{% if todo.description %} - {{ todo.description }}{% endif %}"
+                            data-todo-id="{{ todo.pk }}" onclick="openEditModal(this)">
+                            {% if todo.is_resolved %}✓{% else %}○{% endif %} {{ todo.title|truncatechars:20 }}
+                        </div>
+                        {% endfor %}
+                        {% endif %}
+                    </div>
+                </td>
+                {% endfor %}
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    <div class="legend">
+        <div class="legend-item">
+            <span class="calendar-todo todo-pending" style="cursor: default;">○ Pending</span>
+        </div>
+        <div class="legend-item">
+            <span class="calendar-todo todo-overdue" style="cursor: default;">○ Overdue</span>
+        </div>
+        <div class="legend-item">
+            <span class="calendar-todo todo-completed" style="cursor: default;">✓ Completed</span>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="editTodoModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content" id="editTodoModalContent">
+            <div class="modal-body text-center py-5">
+                <div class="spinner-border text-primary" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+    function openEditModal(element) {
+        const todoId = element.getAttribute('data-todo-id');
+        const modal = new bootstrap.Modal(document.getElementById('editTodoModal'));
+        const contentDiv = document.getElementById('editTodoModalContent');
+
+        modal.show();
+
+        // Fetch the edit form
+        fetch(`/${todoId}/update/`, {
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest'
+            }
+        })
+            .then(response => response.text())
+            .then(html => {
+                contentDiv.innerHTML = html;
+
+                // Re-attach form submit handler
+                const form = contentDiv.querySelector('form');
+                if (form) {
+                    form.addEventListener('submit', function (e) {
+                        e.preventDefault();
+                        const formData = new FormData(form);
+
+                        fetch(form.action, {
+                            method: 'POST',
+                            body: formData,
+                            headers: {
+                                'X-Requested-With': 'XMLHttpRequest'
+                            }
+                        })
+                            .then(response => response.json())
+                            .then(data => {
+                                if (data.status === 'success') {
+                                    location.reload();
+                                }
+                            })
+                            .catch(error => {
+                                console.error('Error:', error);
+                                alert('An error occurred. Please try again.');
+                            });
+                    });
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                contentDiv.innerHTML = '<div class="alert alert-danger m-3">Failed to load todo. Please try again.</div>';
+            });
+    }
+
+    // Helper functions for the quick date buttons in the partial form
+    function setQuickDate(option) {
+        const dateInput = document.querySelector('#editTodoModal input[type="datetime-local"]');
+        if (!dateInput) return;
+
+        const now = new Date();
+        let targetDate = new Date();
+
+        switch (option) {
+            case 'today':
+                targetDate.setHours(23, 59, 0, 0);
+                break;
+            case 'tomorrow':
+                targetDate.setDate(now.getDate() + 1);
+                targetDate.setHours(23, 59, 0, 0);
+                break;
+            case 'nextWeek':
+                targetDate.setDate(now.getDate() + 7);
+                targetDate.setHours(23, 59, 0, 0);
+                break;
+        }
+
+        const year = targetDate.getFullYear();
+        const month = String(targetDate.getMonth() + 1).padStart(2, '0');
+        const day = String(targetDate.getDate()).padStart(2, '0');
+        const hours = String(targetDate.getHours()).padStart(2, '0');
+        const minutes = String(targetDate.getMinutes()).padStart(2, '0');
+
+        dateInput.value = `${year}-${month}-${day}T${hours}:${minutes}`;
+    }
+
+    function clearDate() {
+        const dateInput = document.querySelector('#editTodoModal input[type="datetime-local"]');
+        if (dateInput) dateInput.value = '';
+    }
+</script>
+{% endblock %}

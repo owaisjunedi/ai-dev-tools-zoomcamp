@@ -1,0 +1,263 @@
+{% extends 'todo/base.html' %}
+
+{% block title %}Todo List{% endblock %}
+
+{% block header_actions %}
+<a href="{% url 'todo-calendar' %}" class="btn btn-sm btn-outline-primary">📅 Calendar</a>
+<a href="{% url 'todo-create' %}" class="btn btn-sm btn-primary">➕ Add Todo</a>
+{% endblock %}
+
+{% block extra_styles %}
+<style>
+    .content-card {
+        background: var(--bg-primary);
+        border-radius: 8px;
+        padding: 1.5rem;
+        margin-bottom: 1.5rem;
+        box-shadow: 0 2px 8px var(--shadow);
+    }
+
+    .view-toggle {
+        display: flex;
+        gap: 0.5rem;
+        margin-bottom: 1rem;
+    }
+
+    .todo-item {
+        transition: all 0.2s ease;
+        padding: 1rem;
+    }
+
+    .todo-item:hover {
+        background: var(--bg-secondary);
+    }
+
+    .todo-resolved {
+        text-decoration: line-through;
+        opacity: 0.6;
+    }
+
+    .card-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+        gap: 1.5rem;
+    }
+
+    .todo-card {
+        height: 100%;
+        transition: all 0.2s ease;
+    }
+
+    .todo-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px var(--shadow);
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="content-card">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2 class="mb-0">My Todos</h2>
+        <div class="view-toggle">
+            <a href="?view=list&filter={{ current_filter }}"
+                class="btn btn-sm {% if current_view == 'list' %}btn-primary{% else %}btn-outline-primary{% endif %}">
+                📋 List
+            </a>
+            <a href="?view=card&filter={{ current_filter }}"
+                class="btn btn-sm {% if current_view == 'card' %}btn-primary{% else %}btn-outline-primary{% endif %}">
+                🃏 Cards
+            </a>
+        </div>
+    </div>
+
+    <form method="get" class="mb-4">
+        <div class="row g-3">
+            <div class="col-md-4">
+                <input type="text" name="search" class="form-control" placeholder="🔍 Search todos..."
+                    value="{{ search_query }}">
+            </div>
+            <div class="col-md-3">
+                <select name="priority" class="form-select">
+                    <option value="">All Priorities</option>
+                    <option value="critical" {% if priority_filter == "critical" %}selected{% endif %}>Critical</option>
+                    <option value="high" {% if priority_filter == "high" %}selected{% endif %}>High</option>
+                    <option value="medium" {% if priority_filter == "medium" %}selected{% endif %}>Medium</option>
+                    <option value="low" {% if priority_filter == "low" %}selected{% endif %}>Low</option>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <select name="tag" class="form-select">
+                    <option value="">All Tags</option>
+                    {% for tag in all_tags %}
+                    <option value="{{ tag }}" {% if tag_filter == tag %}selected{% endif %}>{{ tag }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-2">
+                <button type="submit" class="btn btn-primary w-100">Filter</button>
+            </div>
+        </div>
+        <input type="hidden" name="filter" value="{{ current_filter }}">
+        <input type="hidden" name="view" value="{{ current_view }}">
+    </form>
+
+    <ul class="nav nav-tabs mb-4">
+        <li class="nav-item">
+            <a class="nav-link {% if current_filter == 'all' %}active{% endif %}"
+                href="?filter=all&view={{ current_view }}">All</a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link {% if current_filter == 'pending' %}active{% endif %}"
+                href="?filter=pending&view={{ current_view }}">Pending</a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link {% if current_filter == 'urgent' %}active{% endif %}"
+                href="?filter=urgent&view={{ current_view }}">Urgent</a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link {% if current_filter == 'completed' %}active{% endif %}"
+                href="?filter=completed&view={{ current_view }}">Completed</a>
+        </li>
+    </ul>
+
+    {% if current_view == 'card' %}
+    <div class="card-grid">
+        {% for todo in todos %}
+        <div class="card todo-card">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-start mb-3">
+                    <h5 class="card-title mb-0 {% if todo.is_resolved %}todo-resolved{% endif %}">
+                        {{ todo.title }}
+                    </h5>
+                    <form method="post" action="{% url 'todo-toggle' todo.pk %}">
+                        {% csrf_token %}
+                        <input type="checkbox" class="form-check-input" {% if todo.is_resolved %}checked{% endif %}
+                            onchange="this.form.submit()">
+                    </form>
+                </div>
+
+                <div class="mb-2">
+                    <span class="priority-badge priority-{{ todo.priority }}">
+                        {{ todo.get_priority_display }}
+                    </span>
+                </div>
+
+                {% if todo.get_tags_list %}
+                <div class="mb-2">
+                    {% for tag in todo.get_tags_list %}
+                    <span class="tag-badge">{{ tag }}</span>
+                    {% endfor %}
+                </div>
+                {% endif %}
+
+                {% if todo.description %}
+                <p class="card-text text-muted small mb-3">
+                    {{ todo.description|truncatechars:100 }}
+                </p>
+                {% endif %}
+
+                <div class="small text-muted mb-2">
+                    {% if todo.due_date %}
+                        {% now "U" as current_timestamp %}
+                        {% if todo.due_date|date:"U" < current_timestamp %} 
+                            ⏰ Overdue by {{ todo.due_date|timesince }} 
+                        {% else %} 
+                            ⏰ Due in {{ todo.due_date|timeuntil }} 
+                        {% endif %} 
+                    {% else %} 
+                        📅 No due date 
+                    {% endif %}
+                </div>
+
+                <div class="d-flex justify-content-end gap-2 mt-3">
+                    <a href="{% url 'todo-update' todo.pk %}" class="btn btn-sm btn-outline-primary">Edit</a>
+                    <a href="{% url 'todo-delete' todo.pk %}" class="btn btn-sm btn-outline-danger">Delete</a>
+                </div>
+            </div>
+        </div>
+        {% empty %}
+        <div class="text-center text-muted py-5">
+            {% if current_filter == 'pending' %}
+            No pending todos. Great job! 🎉
+            {% elif current_filter == 'completed' %}
+            No completed todos yet.
+            {% elif current_filter == 'urgent' %}
+            No urgent todos. You're all caught up! 👍
+            {% else %}
+            No todos yet. Click "Add Todo" to get started!
+            {% endif %}
+        </div>
+        {% endfor %}
+    </div>
+
+    {% else %}
+    <ul class="list-group">
+        {% for todo in todos %}
+        <li class="list-group-item todo-item">
+            <div class="d-flex justify-content-between align-items-start">
+                <div class="d-flex align-items-start flex-grow-1 gap-3">
+                    <form method="post" action="{% url 'todo-toggle' todo.pk %}">
+                        {% csrf_token %}
+                        <input type="checkbox" class="form-check-input mt-1" {% if todo.is_resolved %}checked{% endif %} onchange="this.form.submit()">
+                    </form>
+
+                    <div class="flex-grow-1 {% if todo.is_resolved %}todo-resolved{% endif %}">
+                        <div class="mb-2">
+                            <strong class="fs-5">{{ todo.title }}</strong>
+                            <span class="priority-badge priority-{{ todo.priority }} ms-2">
+                                {{ todo.get_priority_display }}
+                            </span>
+                        </div>
+
+                        {% if todo.get_tags_list %}
+                        <div class="mb-2">
+                            {% for tag in todo.get_tags_list %}
+                            <span class="tag-badge">{{ tag }}</span>
+                            {% endfor %}
+                        </div>
+                        {% endif %}
+
+                        {% if todo.description %}
+                        <div class="text-muted mb-2">{{ todo.description|truncatechars:150 }}</div>
+                        {% endif %}
+
+                        <div class="small text-muted">
+                            {% if todo.due_date %}
+                                {% now "U" as current_timestamp %}
+                                {% if todo.due_date|date:"U" < current_timestamp %}
+                                    ⏰ Overdue by {{ todo.due_date|timesince }} | Due: {{ todo.due_date|date:"M d, Y H:i" }}
+                                {% else %}
+                                    ⏰ Due in {{ todo.due_date|timeuntil }} | Due: {{ todo.due_date|date:"M d, Y H:i" }}
+                                {% endif %}
+                            {% else %}
+                                📅 No due date
+                            {% endif %}
+                            <span class="ms-3">Created: {{ todo.created_at|date:"M d, Y" }}</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="d-flex gap-2">
+                    <a href="{% url 'todo-update' todo.pk %}" class="btn btn-sm btn-outline-primary">Edit</a>
+                    <a href="{% url 'todo-delete' todo.pk %}" class="btn btn-sm btn-outline-danger">Delete</a>
+                </div>
+            </div>
+        </li>
+        {% empty %}
+        <li class="list-group-item text-center text-muted py-5">
+            {% if current_filter == 'pending' %}
+            No pending todos. Great job! 🎉
+            {% elif current_filter == 'completed' %}
+            No completed todos yet.
+            {% elif current_filter == 'urgent' %}
+            No urgent todos. You're all caught up! 👍
+            {% else %}
+            No todos yet. Click "Add Todo" to get started!
+            {% endif %}
+        </li>
+        {% endfor %}
+    </ul>
+    {% endif %}
+</div>
+{% endblock %}
